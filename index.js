@@ -44,6 +44,22 @@ exports.Cookie = Cookie;
 exports.Session = Session;
 exports.MemoryStore = MemoryStore;
 
+var nodeVersion = process.versions.node.split('.');
+// pause is broken in node < 0.10
+var brokenPause = parseInt(nodeVersion[0], 10) === 0
+  && parseInt(nodeVersion[1], 10) < 10;
+
+var noop = function(){};
+
+var pause_stream = brokenPause
+  ? require('pause')
+  : function () {
+    return {
+      end: noop,
+      resume: noop
+    }
+  };
+
 /**
  * Warning message for `MemoryStore` usage in production.
  * @private
@@ -363,8 +379,16 @@ function session(options){
     }
 
     // generate the session object
+    var pause = pause_stream(req);
     debug('fetching %s', req.sessionID);
     store.get(req.sessionID, function(err, sess){
+      // proxy to resume() events
+      var _next = next;
+      next = function(err){
+        _next(err);
+        pause.resume();
+      };
+
       // error handling
       if (err) {
         debug('error %j', err);
